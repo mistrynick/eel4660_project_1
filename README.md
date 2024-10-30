@@ -1,4 +1,4 @@
-# eel4460_project_1
+# eel4660_project_1
 
 Names: Okafor Ifunanya and Nicholas Mistry 
 
