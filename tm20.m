@@ -22,8 +22,17 @@ X_c = 0.3;
 Y_c = 1.4;
 Z_c = 0.78;
 
+% Configured the circle making thing to trace a sphere intersecting a plane
+% in the Y axis
+% Use the parametric equation of a sphere then solve for phi using the
+% plane of intersection and radius
+% It is bounded by the curve of acos() and by Y_c - Y, essentially
+% the plane must exist on the sphere, if it doesnt exist then no solution
+% will arrive
 
-Y = 0.6;
+% another bound is the reach of the robot 
+
+Y = 0.55;
 phi = acos((Y_c - Y)/RADIUS);
 X = RADIUS * sin(phi) * cos(t); 
 Z = RADIUS * sin(phi) * sin(t); 
@@ -37,7 +46,6 @@ Z = Z+Z_c;
 
 ARR = {};
 ERROR_HIST = zeros(1, NUMBER_OF_POINTS);
-P_hist = {};
 
 P = [
         1 0 0 X(1);
@@ -52,49 +60,51 @@ for i = 1:NUMBER_OF_POINTS
     posX = X(i);
     posY = Y;
     posZ = Z(i);
-    % nicholas mistry: math for orientation of end-effector is the same thing as glm lookAt from computer
-    % graphics rendering, essentially we pretend the end-effector is the
-    % camera and we want to look towards the center to mimic how a pen
-    % would function if you were to draw on a sphere
-    % SOURCE: https://registry.khronos.org/OpenGL-Refpages/gl2.1/xhtml/gluLookAt.xml
+    G = [posX; posY; posZ]; 
+    V = [posX; posY; posZ] - [X_c; Y_c; Z_c];
+    V = V / norm(V);
 
-    target = [X_c-posX; Y_c-posY; Z_c-posZ];
-    U_hat = [0; 0; 1];
+    % let V be the vector that points to the center 
+    % We have to compute the axis of rotation so we can do the axis/angle
+    % rotation 
+    % We can use the vector perpendicular to both V and the Z axis as the
+    % axis of rotation
+    % then the angle of rotation can just be the angle between V and Z
+    % because both V and Z are unit vectors, cos(theta) = dot(V,Z) / mag(V)*mag(Z); 
+    % or in other words, theta = arccos(dot(V,Z)) 
 
-    f = target/norm(target);
-    r = cross(f,U_hat);
-    r = r / norm(r);
-
-    u = cross(r,f);
-    u = u / norm(u);
-
-    R = [
-     r(1), r(2), r(3);
-     u(1), u(2), u(3);
-     -f(1), -f(2),  -f(3) ;
-    ];
+    % Then we can form a Skew Symmetric Matrix and use the Rodriguez
+    % Formula
+   
+    U = [0;0;1];
     
+    k = cross(V,U);
+
+    theta = acos(dot(V,U));
+    
+    S_k = [
+      0, -k(3), k(2);
+      k(3), 0, -k(1);
+      -k(2), k(1), 0;
+    
+    ];
+
+    R = eye(3) + S_k*sin(theta)+ S_k^2*(1-cos(theta));
+
     P = [
         R(1,:), posX;
         R(2,:), posY;
         R(3,:), posZ;
         0, 0, 0, 1
         ];
-
-    
-    %P = [
-        %1 0 0 posX;
-        %0 1 0 posY;
-        %0 0 1 posZ;
-        %0 0 0 1];
-    P_hist{end+1} = P;
-
+       
     [angles, err] = robot.ikcon(P, Q0);
     err;
     ERROR_HIST(i) = err;
     ARR{end+1} = angles;
     Q0 = angles;
-    
+    % in order to speed up ikcon, we can pass in the previous joint angles
+    % as a starting configuration for the numerical ik method
 end
 
 
@@ -104,7 +114,10 @@ THETA_3 = zeros(1, NUMBER_OF_POINTS);
 THETA_4 = zeros(1, NUMBER_OF_POINTS);
 THETA_5 = zeros(1, NUMBER_OF_POINTS);
 THETA_6 = zeros(1, NUMBER_OF_POINTS);
-m = mean(ERROR_HIST)
+m = mean(ERROR_HIST) % just we can have an idea of how bad the ik is 
+
+% ERROR of IK: if its large, it means that we could have certain points the robot
+% cannot reach or we are approaching a singularity
 for i = 1:length(ARR)
     angles = ARR{i};
     THETA_1(i) = angles(1);
@@ -117,26 +130,18 @@ end
 
 Q = [THETA_1' THETA_2' THETA_3' THETA_4' THETA_5' THETA_6'];
 
-positions = zeros(length(P_hist), 3);
-for i = 1:length(P_hist)
-    positions(i, :) = P_hist{i}(1:3, 4)'; 
-end
-
 CONFIG = { ...       
     'fps', 30, ...            
-    'movie', 'tm20_video1.mp4', ... 
+    'movie', 'tm20_video2.mp4', ... 
     'tilesize', 0.2, ...
     'trail', 'r', ...
     'view', [44 12]
 };
-positions;
 
 figure;
 
 sph = surf(x,y,z);
 hold on;
-alpha(sph, 0.5);
-%plot3(positions(:, 1), positions(:, 2), positions(:, 3), 'b', 'LineWidth',2);
 
 xlim([-0.5, 2]);  
 ylim([-0.5, 2]);  
